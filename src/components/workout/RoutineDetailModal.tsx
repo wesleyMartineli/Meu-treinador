@@ -53,7 +53,6 @@ export function RoutineDetailModal({
   onDeleteRoutine,
 }: RoutineDetailModalProps) {
   const [selectedExercise, setSelectedExercise] = useState<Exercise | null>(null);
-  const [isEditingParams, setIsEditingParams] = useState(false);
   const [currentExercises, setCurrentExercises] = useState<RoutineExercise[]>([]);
   const [hasSavedFeedback, setHasSavedFeedback] = useState(false);
 
@@ -72,7 +71,6 @@ export function RoutineDetailModal({
         return true;
       });
       setCurrentExercises(deduped);
-      setIsEditingParams(false);
       setHasSavedFeedback(false);
     }
   }, [routine]);
@@ -127,16 +125,15 @@ export function RoutineDetailModal({
   const handleUpdateParam = (
     index: number,
     field: keyof RoutineExercise,
-    value: unknown
+    value: unknown,
+    persistImmediately: boolean = false
   ) => {
     const updated = [...currentExercises];
     updated[index] = { ...updated[index], [field]: value };
     setCurrentExercises(updated);
-  };
-
-  const handleSaveCustomParams = () => {
-    handlePersistChanges(currentExercises);
-    setIsEditingParams(false);
+    if (persistImmediately) {
+      handlePersistChanges(updated);
+    }
   };
 
   const handleRemoveExercise = (index: number) => {
@@ -270,7 +267,7 @@ export function RoutineDetailModal({
                 </span>
                 {hasSavedFeedback && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800 animate-fade-in">
-                    <Check className="h-3 w-3" /> Ficha atualizada com sucesso!
+                    <Check className="h-3 w-3" /> Ficha salva com sucesso!
                   </span>
                 )}
               </div>
@@ -307,11 +304,22 @@ export function RoutineDetailModal({
               <button
                 type="button"
                 onClick={handleOpenAddExercise}
-                className="px-3 py-2 rounded-xl bg-[#FF6500]/15 hover:bg-[#FF6500] border border-[#FF6500]/30 text-xs font-bold uppercase tracking-wider text-[#FF6500] hover:text-black transition-all flex items-center gap-1.5"
+                className="px-3.5 py-2 rounded-xl bg-[#FF6500]/15 hover:bg-[#FF6500] border border-[#FF6500]/30 text-xs font-bold uppercase tracking-wider text-[#FF6500] hover:text-black transition-all flex items-center gap-1.5"
                 title="Adicionar novo exercício a esta ficha"
               >
                 <Plus className="h-3.5 w-3.5 stroke-[3]" />
-                <span>Adicionar</span>
+                <span>Adicionar Exercício</span>
+              </button>
+
+              {/* Manual Save Button */}
+              <button
+                type="button"
+                onClick={() => handlePersistChanges(currentExercises)}
+                className="px-3.5 py-2 rounded-xl bg-[#222222] hover:bg-[#2c2c2c] border border-[#383838] text-xs font-bold uppercase tracking-wider text-white hover:text-[#FF6500] transition-all flex items-center gap-1.5"
+                title="Salvar todas as alterações"
+              >
+                <Save className="h-3.5 w-3.5 text-[#FF6500]" />
+                <span>Salvar Ficha</span>
               </button>
 
               {onDeleteRoutine && (
@@ -324,38 +332,6 @@ export function RoutineDetailModal({
                   <Trash2 className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Excluir</span>
                 </button>
-              )}
-
-              {!isEditingParams ? (
-                <button
-                  type="button"
-                  onClick={() => setIsEditingParams(true)}
-                  className="px-3.5 py-2 rounded-xl bg-[#222222] hover:bg-[#2c2c2c] border border-[#383838] text-xs font-bold uppercase tracking-wider text-white hover:text-[#FF6500] transition-all flex items-center gap-1.5"
-                >
-                  <Edit3 className="h-3.5 w-3.5 text-[#FF6500]" />
-                  <span>Personalizar</span>
-                </button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCurrentExercises(routine.exercises || []);
-                      setIsEditingParams(false);
-                    }}
-                    className="px-3 py-2 rounded-xl bg-[#222222] text-xs font-bold uppercase text-[#999999] hover:text-white"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveCustomParams}
-                    className="px-4 py-2 rounded-xl bg-[#FF6500] hover:bg-[#e05800] text-black font-black text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md"
-                  >
-                    <Save className="h-3.5 w-3.5" />
-                    <span>Salvar Metas</span>
-                  </button>
-                </div>
               )}
 
               <button
@@ -371,19 +347,15 @@ export function RoutineDetailModal({
           <div className="px-5 py-2.5 bg-[#141414] border-b border-[#222222] flex items-center justify-between text-xs">
             <span className="font-bold uppercase tracking-wider text-[#777777] flex items-center gap-1.5">
               <Sparkles className="h-3.5 w-3.5 text-[#FF6500]" />
-              {isEditingParams
-                ? 'Modo de Edição Ativo: Altere séries, repetições, carga, descanso, método e observações'
-                : 'Sequência de Exercícios da Sessão'}
+              Edite Séries, Repetições, Carga (Peso) e Descanso diretamente abaixo
             </span>
             <span className="text-[11px] text-[#FF6500] font-mono hidden sm:inline-block">
-              {isEditingParams
-                ? 'Clique em "Salvar Metas" para confirmar'
-                : 'Você pode adicionar, excluir, trocar ou reordenar exercícios'}
+              Valores são salvos automaticamente ao alterar
             </span>
           </div>
 
           {/* Exercise List Content */}
-          <div className="p-4 sm:p-6 overflow-y-auto space-y-3.5 divide-y divide-[#222222]/60">
+          <div className="p-4 sm:p-6 overflow-y-auto space-y-4">
             {currentExercises.length === 0 ? (
               <div className="p-8 text-center rounded-2xl border border-dashed border-[#2b2b2b] bg-[#141414] space-y-3">
                 <Dumbbell className="mx-auto h-8 w-8 text-[#555555]" />
@@ -407,11 +379,7 @@ export function RoutineDetailModal({
                 return (
                   <div
                     key={re.id || `${re.exercise_id}-${index}`}
-                    className={`pt-3.5 group flex flex-col gap-3 p-3.5 rounded-xl bg-[#161616] border transition-all duration-200 ${
-                      isEditingParams
-                        ? 'border-[#FF6500]/40 bg-[#171717]'
-                        : 'hover:bg-[#1a1a1a] border-[#262626] hover:border-[#FF6500]/50'
-                    }`}
+                    className="p-4 rounded-2xl bg-[#161616] border border-[#262626] hover:border-[#FF6500]/40 transition-all duration-200 space-y-3.5"
                   >
                     {/* Top Row: Reorder + GIF + Title + Action buttons (Swap / Delete / View GIF) */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -468,7 +436,7 @@ export function RoutineDetailModal({
                           <div className="flex items-center gap-2 flex-wrap">
                             <h4
                               onClick={() => setSelectedExercise(fullEx)}
-                              className="font-display font-black text-sm sm:text-base text-white group-hover:text-[#FF6500] transition-colors truncate cursor-pointer"
+                              className="font-display font-black text-sm sm:text-base text-white hover:text-[#FF6500] transition-colors truncate cursor-pointer"
                             >
                               {fullEx.name}
                             </h4>
@@ -527,171 +495,141 @@ export function RoutineDetailModal({
                       </div>
                     </div>
 
-                    {/* Bottom Row: Parameters (Read-only chips or Editable inputs) */}
-                    <div className="pt-2 border-t border-[#222222]">
-                      {!isEditingParams ? (
-                        /* Read-only Display Mode */
-                        <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
-                          <div className="px-2.5 py-1 rounded-lg bg-[#202020] border border-[#2d2d2d] text-center">
-                            <span className="text-[9px] text-[#777777] block uppercase">Séries</span>
-                            <span className="font-black text-white text-xs">
-                              {re.target_sets || 3}x
-                            </span>
-                          </div>
-
-                          <div className="px-2.5 py-1 rounded-lg bg-[#202020] border border-[#2d2d2d] text-center">
-                            <span className="text-[9px] text-[#777777] block uppercase">Reps</span>
-                            <span className="font-black text-[#FF6500] text-xs">
-                              {re.target_reps_min}
-                              {re.target_reps_max && re.target_reps_max !== re.target_reps_min
-                                ? `-${re.target_reps_max}`
-                                : ''}
-                            </span>
-                          </div>
-
-                          {re.target_weight_kg !== undefined && re.target_weight_kg > 0 && (
-                            <div className="px-2.5 py-1 rounded-lg bg-[#202020] border border-[#2d2d2d] text-center">
-                              <span className="text-[9px] text-[#777777] block uppercase">Carga</span>
-                              <span className="font-black text-white text-xs">
-                                {re.target_weight_kg}kg
-                              </span>
-                            </div>
-                          )}
-
-                          <div className="px-2.5 py-1 rounded-lg bg-[#202020] border border-[#2d2d2d] text-center">
-                            <span className="text-[9px] text-[#777777] block uppercase">Descanso</span>
-                            <span className="font-black text-gray-300 text-xs">
-                              {re.rest_seconds || 60}s
-                            </span>
-                          </div>
-
-                          {re.notes && (
-                            <div className="px-3 py-1 rounded-lg bg-[#141414] border border-[#262626] text-[11px] text-[#999999] italic flex-1 min-w-[200px]">
-                              💡 {re.notes}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        /* Interactive Edit Inputs Mode */
-                        <div className="space-y-2">
-                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono">
-                            {/* Sets */}
-                            <div>
-                              <label className="text-[9px] text-[#777777] uppercase font-bold block mb-1">
-                                Séries
-                              </label>
-                              <input
-                                type="number"
-                                min={1}
-                                max={12}
-                                value={re.target_sets || 3}
-                                onChange={(e) =>
-                                  handleUpdateParam(index, 'target_sets', Math.max(1, Number(e.target.value)))
-                                }
-                                className="w-full text-center rounded-lg bg-[#111111] border border-[#FF6500]/50 px-1.5 py-1 text-xs text-white font-black focus:outline-none focus:border-[#FF6500]"
-                              />
-                            </div>
-
-                            {/* Reps */}
-                            <div>
-                              <label className="text-[9px] text-[#777777] uppercase font-bold block mb-1">
-                                Reps (Mín - Máx)
-                              </label>
-                              <div className="flex items-center gap-1">
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={100}
-                                  value={re.target_reps_min || 8}
-                                  onChange={(e) =>
-                                    handleUpdateParam(index, 'target_reps_min', Math.max(1, Number(e.target.value)))
-                                  }
-                                  className="w-full text-center rounded-lg bg-[#111111] border border-[#FF6500]/50 px-1 py-1 text-xs text-[#FF6500] font-black focus:outline-none focus:border-[#FF6500]"
-                                />
-                                <span className="text-gray-500">-</span>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={100}
-                                  value={re.target_reps_max || re.target_reps_min || 12}
-                                  onChange={(e) =>
-                                    handleUpdateParam(index, 'target_reps_max', Math.max(1, Number(e.target.value)))
-                                  }
-                                  className="w-full text-center rounded-lg bg-[#111111] border border-[#FF6500]/50 px-1 py-1 text-xs text-[#FF6500] font-black focus:outline-none focus:border-[#FF6500]"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Load */}
-                            <div>
-                              <label className="text-[9px] text-[#777777] uppercase font-bold block mb-1">
-                                Carga (kg)
-                              </label>
-                              <input
-                                type="number"
-                                step="0.5"
-                                min={0}
-                                max={500}
-                                value={re.target_weight_kg ?? 0}
-                                onChange={(e) =>
-                                  handleUpdateParam(index, 'target_weight_kg', Number(e.target.value))
-                                }
-                                className="w-full text-center rounded-lg bg-[#111111] border border-[#383838] px-1.5 py-1 text-xs text-white font-black focus:outline-none focus:border-[#FF6500]"
-                              />
-                            </div>
-
-                            {/* Rest */}
-                            <div>
-                              <label className="text-[9px] text-[#777777] uppercase font-bold block mb-1">
-                                Descanso (s)
-                              </label>
-                              <input
-                                type="number"
-                                step="5"
-                                min={0}
-                                max={600}
-                                value={re.rest_seconds || 60}
-                                onChange={(e) =>
-                                  handleUpdateParam(index, 'rest_seconds', Number(e.target.value))
-                                }
-                                className="w-full text-center rounded-lg bg-[#111111] border border-[#383838] px-1.5 py-1 text-xs text-gray-300 font-black focus:outline-none focus:border-[#FF6500]"
-                              />
-                            </div>
-
-                            {/* Special Technique */}
-                            <div>
-                              <label className="text-[9px] text-[#777777] uppercase font-bold block mb-1">
-                                Técnica
-                              </label>
-                              <select
-                                value={re.set_type || 'normal'}
-                                onChange={(e) =>
-                                  handleUpdateParam(index, 'set_type', e.target.value as SetType)
-                                }
-                                className="w-full rounded-lg bg-[#111111] border border-[#383838] px-1.5 py-1 text-[11px] text-white focus:outline-none focus:border-[#FF6500]"
-                              >
-                                <option value="normal">Normal</option>
-                                <option value="dropset">Drop Set</option>
-                                <option value="biset">Bi-Set</option>
-                                <option value="rest_pause">Rest Pause</option>
-                                <option value="falha">Até a Falha</option>
-                                <option value="aquecimento">Aquecimento</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          {/* Notes */}
-                          <div>
+                    {/* Bottom Row: Direct Interactive Parameter Controls (Always Editable) */}
+                    <div className="pt-3 border-t border-[#222222] space-y-2.5">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono">
+                        {/* Séries */}
+                        <div className="p-2 rounded-xl bg-[#111111] border border-[#292929] focus-within:border-[#FF6500] transition-colors">
+                          <label className="text-[9px] text-[#777777] block uppercase font-bold mb-1">
+                            Séries
+                          </label>
+                          <div className="flex items-center">
                             <input
-                              type="text"
-                              value={re.notes || ''}
-                              placeholder="Observações (ex: última série até a falha, cadência 3-1-1)"
-                              onChange={(e) => handleUpdateParam(index, 'notes', e.target.value)}
-                              className="w-full rounded-lg bg-[#111111] border border-[#2a2a2a] px-2.5 py-1.5 text-xs text-gray-300 placeholder:text-gray-600 focus:outline-none focus:border-[#FF6500]"
+                              type="number"
+                              min={1}
+                              max={20}
+                              value={re.target_sets || 3}
+                              onChange={(e) =>
+                                handleUpdateParam(index, 'target_sets', Math.max(1, Number(e.target.value)), true)
+                              }
+                              onBlur={() => handlePersistChanges(currentExercises)}
+                              className="w-full bg-transparent text-sm font-black text-white focus:outline-none"
+                            />
+                            <span className="text-xs text-[#777777] font-bold pr-1">x</span>
+                          </div>
+                        </div>
+
+                        {/* Repetições (Reps) */}
+                        <div className="p-2 rounded-xl bg-[#111111] border border-[#292929] focus-within:border-[#FF6500] transition-colors">
+                          <label className="text-[9px] text-[#777777] block uppercase font-bold mb-1">
+                            Repetições (Reps)
+                          </label>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={1}
+                              max={100}
+                              value={re.target_reps_min || 8}
+                              onChange={(e) =>
+                                handleUpdateParam(index, 'target_reps_min', Math.max(1, Number(e.target.value)), true)
+                              }
+                              onBlur={() => handlePersistChanges(currentExercises)}
+                              className="w-full bg-transparent text-sm font-black text-[#FF6500] focus:outline-none"
+                              title="Reps mínimas"
+                            />
+                            <span className="text-xs text-[#666666]">-</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={100}
+                              value={re.target_reps_max || re.target_reps_min || 12}
+                              onChange={(e) =>
+                                handleUpdateParam(index, 'target_reps_max', Math.max(1, Number(e.target.value)), true)
+                              }
+                              onBlur={() => handlePersistChanges(currentExercises)}
+                              className="w-full bg-transparent text-sm font-black text-[#FF6500] focus:outline-none"
+                              title="Reps máximas"
                             />
                           </div>
                         </div>
-                      )}
+
+                        {/* Carga / Peso (kg) */}
+                        <div className="p-2 rounded-xl bg-[#111111] border border-[#292929] focus-within:border-[#FF6500] transition-colors">
+                          <label className="text-[9px] text-[#777777] block uppercase font-bold mb-1">
+                            Carga (Peso kg)
+                          </label>
+                          <div className="flex items-center">
+                            <input
+                              type="number"
+                              step="0.5"
+                              min={0}
+                              max={500}
+                              value={re.target_weight_kg ?? 0}
+                              onChange={(e) =>
+                                handleUpdateParam(index, 'target_weight_kg', Math.max(0, Number(e.target.value)), true)
+                              }
+                              onBlur={() => handlePersistChanges(currentExercises)}
+                              className="w-full bg-transparent text-sm font-black text-white focus:outline-none"
+                            />
+                            <span className="text-xs text-[#777777] font-bold pr-1">kg</span>
+                          </div>
+                        </div>
+
+                        {/* Descanso (s) */}
+                        <div className="p-2 rounded-xl bg-[#111111] border border-[#292929] focus-within:border-[#FF6500] transition-colors">
+                          <label className="text-[9px] text-[#777777] block uppercase font-bold mb-1">
+                            Descanso (s)
+                          </label>
+                          <div className="flex items-center">
+                            <input
+                              type="number"
+                              step="5"
+                              min={0}
+                              max={600}
+                              value={re.rest_seconds || 60}
+                              onChange={(e) =>
+                                handleUpdateParam(index, 'rest_seconds', Math.max(0, Number(e.target.value)), true)
+                              }
+                              onBlur={() => handlePersistChanges(currentExercises)}
+                              className="w-full bg-transparent text-sm font-black text-gray-300 focus:outline-none"
+                            />
+                            <span className="text-xs text-[#777777] font-bold pr-1">s</span>
+                          </div>
+                        </div>
+
+                        {/* Técnica Especial */}
+                        <div className="p-2 rounded-xl bg-[#111111] border border-[#292929] focus-within:border-[#FF6500] transition-colors">
+                          <label className="text-[9px] text-[#777777] block uppercase font-bold mb-1">
+                            Técnica
+                          </label>
+                          <select
+                            value={re.set_type || 'normal'}
+                            onChange={(e) =>
+                              handleUpdateParam(index, 'set_type', e.target.value as SetType, true)
+                            }
+                            className="w-full bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
+                          >
+                            <option value="normal" className="bg-[#181818] text-white">Normal</option>
+                            <option value="dropset" className="bg-[#181818] text-white">Drop Set</option>
+                            <option value="biset" className="bg-[#181818] text-white">Bi-Set</option>
+                            <option value="rest_pause" className="bg-[#181818] text-white">Rest Pause</option>
+                            <option value="falha" className="bg-[#181818] text-white">Até a Falha</option>
+                            <option value="aquecimento" className="bg-[#181818] text-white">Aquecimento</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Notes / Observações input */}
+                      <div>
+                        <input
+                          type="text"
+                          value={re.notes || ''}
+                          placeholder="Observações do exercício (ex: última série até a falha, cadência 3-1-1)..."
+                          onChange={(e) => handleUpdateParam(index, 'notes', e.target.value)}
+                          onBlur={() => handlePersistChanges(currentExercises)}
+                          className="w-full rounded-xl bg-[#111111] border border-[#242424] px-3 py-1.5 text-xs text-gray-300 placeholder:text-[#555555] focus:outline-none focus:border-[#FF6500]/50 font-sans"
+                        />
+                      </div>
                     </div>
                   </div>
                 );
