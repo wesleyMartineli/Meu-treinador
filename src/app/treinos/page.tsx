@@ -15,6 +15,7 @@ import {
   Calendar,
   Trash2,
   AlertTriangle,
+  Edit3,
 } from 'lucide-react';
 import { WorkoutRoutine } from '@/types/database';
 import Link from 'next/link';
@@ -23,6 +24,7 @@ export default function TreinosPage() {
   const [routines, setRoutines] = React.useState<WorkoutRoutine[]>(appStorage.getRoutines());
   const [activeRoutine, setActiveRoutine] = React.useState<WorkoutRoutine | null>(null);
   const [detailRoutine, setDetailRoutine] = React.useState<WorkoutRoutine | null>(null);
+  const [editingRoutine, setEditingRoutine] = React.useState<WorkoutRoutine | null>(null);
   const [isBuilderOpen, setIsBuilderOpen] = React.useState(false);
   const [routineToDelete, setRoutineToDelete] = React.useState<WorkoutRoutine | null>(null);
 
@@ -188,7 +190,7 @@ export default function TreinosPage() {
                   </div>
                 </div>
 
-                {/* Action Buttons */}
+                  {/* Action Buttons */}
                 <div className="pt-4 grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -199,7 +201,7 @@ export default function TreinosPage() {
                     className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#171717] hover:bg-[#202020] border border-[#262626] py-2 text-xs font-bold text-[#CCCCCC] hover:text-white uppercase tracking-wider transition-all"
                   >
                     <Eye className="h-3 w-3 text-[#FF6500]" />
-                    Ver GIFs
+                    Ver / Editar
                   </button>
 
                   <button
@@ -230,6 +232,7 @@ export default function TreinosPage() {
           setActiveRoutine(routine);
         }}
         onEditFullRoutine={(routine) => {
+          setEditingRoutine(routine);
           setDetailRoutine(null);
           setIsBuilderOpen(true);
         }}
@@ -254,18 +257,23 @@ export default function TreinosPage() {
 
       {/* Custom Routine Builder */}
       <RoutineBuilderModal
-        routineToEdit={detailRoutine}
+        routineToEdit={editingRoutine}
         isOpen={isBuilderOpen}
-        onClose={() => setIsBuilderOpen(false)}
+        onClose={() => {
+          setIsBuilderOpen(false);
+          setEditingRoutine(null);
+        }}
         onDelete={(id) => {
           appStorage.deleteRoutine(id);
           setRoutines(appStorage.getRoutines());
           setIsBuilderOpen(false);
+          setEditingRoutine(null);
           setDetailRoutine(null);
         }}
         onSave={() => {
           setRoutines(appStorage.getRoutines());
           setIsBuilderOpen(false);
+          setEditingRoutine(null);
         }}
       />
 

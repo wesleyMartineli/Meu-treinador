@@ -22,6 +22,11 @@ import {
   Check,
   Settings2,
   Trash2,
+  Plus,
+  ArrowUp,
+  ArrowDown,
+  RefreshCw,
+  Search,
 } from 'lucide-react';
 import { WorkoutRoutine, RoutineExercise, Exercise, SetType } from '@/types/database';
 import { appStorage } from '@/lib/storage';
@@ -51,6 +56,11 @@ export function RoutineDetailModal({
   const [isEditingParams, setIsEditingParams] = useState(false);
   const [currentExercises, setCurrentExercises] = useState<RoutineExercise[]>([]);
   const [hasSavedFeedback, setHasSavedFeedback] = useState(false);
+
+  // Exercise picker state (for adding or swapping)
+  const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
+  const [swappingExerciseIndex, setSwappingExerciseIndex] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   React.useEffect(() => {
     if (routine) {
@@ -89,6 +99,31 @@ export function RoutineDetailModal({
     };
   };
 
+  const handlePersistChanges = (exercisesToSave: RoutineExercise[]) => {
+    const seen = new Set<string>();
+    const deduped = exercisesToSave.filter((ex) => {
+      const id = ex.exercise?.id || ex.exercise_id;
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    const updatedRoutine: WorkoutRoutine = {
+      ...routine,
+      exercises: deduped,
+      updated_at: new Date().toISOString(),
+    };
+
+    appStorage.saveRoutine(updatedRoutine);
+    setCurrentExercises(deduped);
+    if (onRoutineUpdated) {
+      onRoutineUpdated(updatedRoutine);
+    }
+
+    setHasSavedFeedback(true);
+    setTimeout(() => setHasSavedFeedback(false), 2500);
+  };
+
   const handleUpdateParam = (
     index: number,
     field: keyof RoutineExercise,
@@ -100,20 +135,70 @@ export function RoutineDetailModal({
   };
 
   const handleSaveCustomParams = () => {
-    const updatedRoutine: WorkoutRoutine = {
-      ...routine,
-      exercises: currentExercises,
-      updated_at: new Date().toISOString(),
-    };
-
-    appStorage.saveRoutine(updatedRoutine);
-    if (onRoutineUpdated) {
-      onRoutineUpdated(updatedRoutine);
-    }
-
+    handlePersistChanges(currentExercises);
     setIsEditingParams(false);
-    setHasSavedFeedback(true);
-    setTimeout(() => setHasSavedFeedback(false), 3000);
+  };
+
+  const handleRemoveExercise = (index: number) => {
+    const updated = currentExercises.filter((_, i) => i !== index);
+    handlePersistChanges(updated);
+  };
+
+  const handleMoveExercise = (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= currentExercises.length) return;
+    const updated = [...currentExercises];
+    const temp = updated[index];
+    updated[index] = updated[targetIndex];
+    updated[targetIndex] = temp;
+    const reindexed = updated.map((e, idx) => ({ ...e, order_index: idx }));
+    handlePersistChanges(reindexed);
+  };
+
+  const handleOpenAddExercise = () => {
+    setSwappingExerciseIndex(null);
+    setSearchQuery('');
+    setIsExercisePickerOpen(true);
+  };
+
+  const handleOpenSwapExercise = (index: number) => {
+    setSwappingExerciseIndex(index);
+    setSearchQuery('');
+    setIsExercisePickerOpen(true);
+  };
+
+  const handleSelectPickerExercise = (exercise: Exercise) => {
+    if (swappingExerciseIndex !== null) {
+      const updated = [...currentExercises];
+      updated[swappingExerciseIndex] = {
+        ...updated[swappingExerciseIndex],
+        exercise_id: exercise.id,
+        exercise: exercise,
+      };
+      handlePersistChanges(updated);
+      setSwappingExerciseIndex(null);
+    } else {
+      if (currentExercises.some((e) => (e.exercise?.id || e.exercise_id) === exercise.id)) {
+        return;
+      }
+      const newRoutineEx: RoutineExercise = {
+        id: `re-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        routine_id: routine.id,
+        exercise_id: exercise.id,
+        exercise: exercise,
+        order_index: currentExercises.length,
+        target_sets: 3,
+        target_reps_min: 8,
+        target_reps_max: 12,
+        target_weight_kg: 20,
+        rest_seconds: 90,
+        set_type: 'normal',
+        notes: '',
+      };
+      handlePersistChanges([...currentExercises, newRoutineEx]);
+    }
+    setIsExercisePickerOpen(false);
+    setSearchQuery('');
   };
 
   const getSetTypeBadge = (setType?: string) => {
@@ -142,10 +227,22 @@ export function RoutineDetailModal({
             Aquecimento
           </span>
         );
+      case 'falha':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-300 border border-red-500/30">
+            Até a Falha
+          </span>
+        );
       default:
         return null;
     }
   };
+
+  const filteredExercises = allExercises.filter(
+    (ex) =>
+      ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ex.primary_muscle.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <>
@@ -172,8 +269,8 @@ export function RoutineDetailModal({
                   {currentExercises.length} Exercícios Estruturados
                 </span>
                 {hasSavedFeedback && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800 animate-fade-in">
-                    <Check className="h-3 w-3" /> Alterações salvas!
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-800 animate-fade-in">
+                    <Check className="h-3 w-3" /> Ficha atualizada com sucesso!
                   </span>
                 )}
               </div>
@@ -204,8 +301,19 @@ export function RoutineDetailModal({
               </div>
             </div>
 
-            {/* Quick Action Toggle for Parameter Editing & Delete */}
+            {/* Top Action Controls */}
             <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end flex-wrap">
+              {/* Add Exercise button */}
+              <button
+                type="button"
+                onClick={handleOpenAddExercise}
+                className="px-3 py-2 rounded-xl bg-[#FF6500]/15 hover:bg-[#FF6500] border border-[#FF6500]/30 text-xs font-bold uppercase tracking-wider text-[#FF6500] hover:text-black transition-all flex items-center gap-1.5"
+                title="Adicionar novo exercício a esta ficha"
+              >
+                <Plus className="h-3.5 w-3.5 stroke-[3]" />
+                <span>Adicionar</span>
+              </button>
+
               {onDeleteRoutine && (
                 <button
                   type="button"
@@ -225,7 +333,7 @@ export function RoutineDetailModal({
                   className="px-3.5 py-2 rounded-xl bg-[#222222] hover:bg-[#2c2c2c] border border-[#383838] text-xs font-bold uppercase tracking-wider text-white hover:text-[#FF6500] transition-all flex items-center gap-1.5"
                 >
                   <Edit3 className="h-3.5 w-3.5 text-[#FF6500]" />
-                  Personalizar
+                  <span>Personalizar</span>
                 </button>
               ) : (
                 <div className="flex items-center gap-2">
@@ -245,7 +353,7 @@ export function RoutineDetailModal({
                     className="px-4 py-2 rounded-xl bg-[#FF6500] hover:bg-[#e05800] text-black font-black text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md"
                   >
                     <Save className="h-3.5 w-3.5" />
-                    Salvar Metas
+                    <span>Salvar Metas</span>
                   </button>
                 </div>
               )}
@@ -264,232 +372,343 @@ export function RoutineDetailModal({
             <span className="font-bold uppercase tracking-wider text-[#777777] flex items-center gap-1.5">
               <Sparkles className="h-3.5 w-3.5 text-[#FF6500]" />
               {isEditingParams
-                ? 'Modo de Edição Ativo: Altere séries, repetições, carga e descanso abaixo'
+                ? 'Modo de Edição Ativo: Altere séries, repetições, carga, descanso, método e observações'
                 : 'Sequência de Exercícios da Sessão'}
             </span>
             <span className="text-[11px] text-[#FF6500] font-mono hidden sm:inline-block">
               {isEditingParams
                 ? 'Clique em "Salvar Metas" para confirmar'
-                : 'Clique no exercício ou no GIF para ver a biomecânica'}
+                : 'Você pode adicionar, excluir, trocar ou reordenar exercícios'}
             </span>
           </div>
 
           {/* Exercise List Content */}
           <div className="p-4 sm:p-6 overflow-y-auto space-y-3.5 divide-y divide-[#222222]/60">
-            {currentExercises.map((re, index) => {
-              const fullEx = getFullExercise(re);
-              const media = getExerciseMedia(fullEx.id, fullEx.primary_muscle);
-              const setTypeBadge = getSetTypeBadge(re.set_type);
-
-              return (
-                <div
-                  key={re.id || `${re.exercise_id}-${index}`}
-                  className={`pt-3.5 group flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 p-3.5 rounded-xl bg-[#161616] border transition-all duration-200 ${
-                    isEditingParams
-                      ? 'border-[#FF6500]/30 bg-[#171717]'
-                      : 'hover:bg-[#1a1a1a] border-[#262626] hover:border-[#FF6500]/50 cursor-pointer'
-                  }`}
-                  onClick={() => {
-                    if (!isEditingParams) setSelectedExercise(fullEx);
-                  }}
+            {currentExercises.length === 0 ? (
+              <div className="p-8 text-center rounded-2xl border border-dashed border-[#2b2b2b] bg-[#141414] space-y-3">
+                <Dumbbell className="mx-auto h-8 w-8 text-[#555555]" />
+                <p className="text-sm font-bold text-white uppercase">Nenhum exercício nesta ficha</p>
+                <p className="text-xs text-[#777777]">Adicione exercícios para montar sua rotina de treinamento.</p>
+                <button
+                  type="button"
+                  onClick={handleOpenAddExercise}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#FF6500] px-4 py-2 text-xs font-bold uppercase tracking-wider text-black hover:bg-[#e05800] transition-all"
                 >
-                  {/* Left: Index + GIF Thumbnail + Name */}
-                  <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#222222] group-hover:bg-[#FF6500] text-xs font-black text-[#888888] group-hover:text-black transition-colors font-mono">
-                      {index + 1}
-                    </span>
+                  <Plus className="h-3.5 w-3.5 stroke-[3]" />
+                  Adicionar Primeiro Exercício
+                </button>
+              </div>
+            ) : (
+              currentExercises.map((re, index) => {
+                const fullEx = getFullExercise(re);
+                const media = getExerciseMedia(fullEx.id, fullEx.primary_muscle);
+                const setTypeBadge = getSetTypeBadge(re.set_type);
 
-                    {/* Thumbnail GIF preview */}
-                    <div
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedExercise(fullEx);
-                      }}
-                      className="relative h-14 w-14 shrink-0 rounded-xl overflow-hidden bg-black border border-[#2c2c2c] group-hover:border-[#FF6500]/40 transition-all flex items-center justify-center cursor-pointer"
-                      title="Ver demonstração em GIF"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={media.gifUrl || media.coverImage}
-                        alt={fullEx.name}
-                        className="h-full w-full object-contain p-1"
-                        loading="lazy"
-                      />
-                      <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors" />
-                      <div className="absolute bottom-1 right-1 px-1 py-0.2 rounded bg-black/80 text-[8px] font-mono font-bold text-[#FF6500]">
-                        GIF
+                return (
+                  <div
+                    key={re.id || `${re.exercise_id}-${index}`}
+                    className={`pt-3.5 group flex flex-col gap-3 p-3.5 rounded-xl bg-[#161616] border transition-all duration-200 ${
+                      isEditingParams
+                        ? 'border-[#FF6500]/40 bg-[#171717]'
+                        : 'hover:bg-[#1a1a1a] border-[#262626] hover:border-[#FF6500]/50'
+                    }`}
+                  >
+                    {/* Top Row: Reorder + GIF + Title + Action buttons (Swap / Delete / View GIF) */}
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      {/* Left side: Index + Order Buttons + GIF + Details */}
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        {/* Index and Reorder Arrows */}
+                        <div className="flex flex-col items-center gap-0.5">
+                          {index > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleMoveExercise(index, 'up')}
+                              className="text-[#666666] hover:text-[#FF6500] p-0.5 hover:bg-[#222222] rounded transition-colors"
+                              title="Mover para cima"
+                            >
+                              <ArrowUp className="h-3 w-3" />
+                            </button>
+                          )}
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#222222] text-xs font-black text-[#888888] font-mono">
+                            {index + 1}
+                          </span>
+                          {index < currentExercises.length - 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleMoveExercise(index, 'down')}
+                              className="text-[#666666] hover:text-[#FF6500] p-0.5 hover:bg-[#222222] rounded transition-colors"
+                              title="Mover para baixo"
+                            >
+                              <ArrowDown className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Thumbnail GIF preview */}
+                        <div
+                          onClick={() => setSelectedExercise(fullEx)}
+                          className="relative h-14 w-14 shrink-0 rounded-xl overflow-hidden bg-black border border-[#2c2c2c] group-hover:border-[#FF6500]/40 transition-all flex items-center justify-center cursor-pointer"
+                          title="Ver demonstração em GIF"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={media.gifUrl || media.coverImage}
+                            alt={fullEx.name}
+                            className="h-full w-full object-contain p-1"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors" />
+                          <div className="absolute bottom-1 right-1 px-1 py-0.2 rounded bg-black/80 text-[8px] font-mono font-bold text-[#FF6500]">
+                            GIF
+                          </div>
+                        </div>
+
+                        {/* Text Details */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4
+                              onClick={() => setSelectedExercise(fullEx)}
+                              className="font-display font-black text-sm sm:text-base text-white group-hover:text-[#FF6500] transition-colors truncate cursor-pointer"
+                            >
+                              {fullEx.name}
+                            </h4>
+                            {setTypeBadge}
+                          </div>
+
+                          <div className="flex items-center gap-2 mt-1 text-[11px] text-[#777777] font-medium">
+                            <span className="text-[#FF6500] font-bold uppercase">
+                              {fullEx.primary_muscle}
+                            </span>
+                            <span>•</span>
+                            <span className="capitalize">{fullEx.equipment.replace(/_/g, ' ')}</span>
+                            {fullEx.focus && (
+                              <>
+                                <span>•</span>
+                                <span className="capitalize">{fullEx.focus}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right side item action buttons: Swap, Delete, View GIF */}
+                      <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+                        {/* Swap Exercise Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSwapExercise(index)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#202020] hover:bg-[#2a2a2a] border border-[#333333] text-[11px] font-bold uppercase text-[#CCCCCC] hover:text-[#FF6500] transition-colors flex items-center gap-1"
+                          title="Trocar este exercício por outro da biblioteca"
+                        >
+                          <RefreshCw className="h-3 w-3 text-[#FF6500]" />
+                          <span>Trocar</span>
+                        </button>
+
+                        {/* Delete Exercise Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveExercise(index)}
+                          className="px-2.5 py-1.5 rounded-lg bg-red-950/20 hover:bg-red-950/50 border border-red-900/40 text-[11px] font-bold uppercase text-red-400 hover:text-red-300 transition-colors flex items-center gap-1"
+                          title="Remover exercício da ficha"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span>Excluir</span>
+                        </button>
+
+                        {/* View GIF */}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedExercise(fullEx)}
+                          className="px-2.5 py-1.5 rounded-lg bg-[#FF6500]/15 hover:bg-[#FF6500] text-[#FF6500] hover:text-black text-[11px] font-bold uppercase tracking-wider transition-all flex items-center gap-1"
+                        >
+                          <Play className="h-3 w-3 fill-current" />
+                          <span>GIF</span>
+                        </button>
                       </div>
                     </div>
 
-                    {/* Text Details */}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="font-display font-black text-sm sm:text-base text-white group-hover:text-[#FF6500] transition-colors truncate">
-                          {fullEx.name}
-                        </h4>
-                        {setTypeBadge}
-                      </div>
+                    {/* Bottom Row: Parameters (Read-only chips or Editable inputs) */}
+                    <div className="pt-2 border-t border-[#222222]">
+                      {!isEditingParams ? (
+                        /* Read-only Display Mode */
+                        <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
+                          <div className="px-2.5 py-1 rounded-lg bg-[#202020] border border-[#2d2d2d] text-center">
+                            <span className="text-[9px] text-[#777777] block uppercase">Séries</span>
+                            <span className="font-black text-white text-xs">
+                              {re.target_sets || 3}x
+                            </span>
+                          </div>
 
-                      <div className="flex items-center gap-2 mt-1 text-[11px] text-[#777777] font-medium">
-                        <span className="text-[#FF6500] font-bold uppercase">
-                          {fullEx.primary_muscle}
-                        </span>
-                        <span>•</span>
-                        <span className="capitalize">{fullEx.equipment.replace('_', ' ')}</span>
-                        {fullEx.focus && (
-                          <>
-                            <span>•</span>
-                            <span className="capitalize">{fullEx.focus}</span>
-                          </>
-                        )}
-                      </div>
+                          <div className="px-2.5 py-1 rounded-lg bg-[#202020] border border-[#2d2d2d] text-center">
+                            <span className="text-[9px] text-[#777777] block uppercase">Reps</span>
+                            <span className="font-black text-[#FF6500] text-xs">
+                              {re.target_reps_min}
+                              {re.target_reps_max && re.target_reps_max !== re.target_reps_min
+                                ? `-${re.target_reps_max}`
+                                : ''}
+                            </span>
+                          </div>
 
-                      {re.notes && (
-                        <p className="text-[11px] text-[#999999] mt-1 line-clamp-1 italic">
-                          💡 {re.notes}
-                        </p>
+                          {re.target_weight_kg !== undefined && re.target_weight_kg > 0 && (
+                            <div className="px-2.5 py-1 rounded-lg bg-[#202020] border border-[#2d2d2d] text-center">
+                              <span className="text-[9px] text-[#777777] block uppercase">Carga</span>
+                              <span className="font-black text-white text-xs">
+                                {re.target_weight_kg}kg
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="px-2.5 py-1 rounded-lg bg-[#202020] border border-[#2d2d2d] text-center">
+                            <span className="text-[9px] text-[#777777] block uppercase">Descanso</span>
+                            <span className="font-black text-gray-300 text-xs">
+                              {re.rest_seconds || 60}s
+                            </span>
+                          </div>
+
+                          {re.notes && (
+                            <div className="px-3 py-1 rounded-lg bg-[#141414] border border-[#262626] text-[11px] text-[#999999] italic flex-1 min-w-[200px]">
+                              💡 {re.notes}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        /* Interactive Edit Inputs Mode */
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono">
+                            {/* Sets */}
+                            <div>
+                              <label className="text-[9px] text-[#777777] uppercase font-bold block mb-1">
+                                Séries
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={12}
+                                value={re.target_sets || 3}
+                                onChange={(e) =>
+                                  handleUpdateParam(index, 'target_sets', Math.max(1, Number(e.target.value)))
+                                }
+                                className="w-full text-center rounded-lg bg-[#111111] border border-[#FF6500]/50 px-1.5 py-1 text-xs text-white font-black focus:outline-none focus:border-[#FF6500]"
+                              />
+                            </div>
+
+                            {/* Reps */}
+                            <div>
+                              <label className="text-[9px] text-[#777777] uppercase font-bold block mb-1">
+                                Reps (Mín - Máx)
+                              </label>
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={100}
+                                  value={re.target_reps_min || 8}
+                                  onChange={(e) =>
+                                    handleUpdateParam(index, 'target_reps_min', Math.max(1, Number(e.target.value)))
+                                  }
+                                  className="w-full text-center rounded-lg bg-[#111111] border border-[#FF6500]/50 px-1 py-1 text-xs text-[#FF6500] font-black focus:outline-none focus:border-[#FF6500]"
+                                />
+                                <span className="text-gray-500">-</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={100}
+                                  value={re.target_reps_max || re.target_reps_min || 12}
+                                  onChange={(e) =>
+                                    handleUpdateParam(index, 'target_reps_max', Math.max(1, Number(e.target.value)))
+                                  }
+                                  className="w-full text-center rounded-lg bg-[#111111] border border-[#FF6500]/50 px-1 py-1 text-xs text-[#FF6500] font-black focus:outline-none focus:border-[#FF6500]"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Load */}
+                            <div>
+                              <label className="text-[9px] text-[#777777] uppercase font-bold block mb-1">
+                                Carga (kg)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min={0}
+                                max={500}
+                                value={re.target_weight_kg ?? 0}
+                                onChange={(e) =>
+                                  handleUpdateParam(index, 'target_weight_kg', Number(e.target.value))
+                                }
+                                className="w-full text-center rounded-lg bg-[#111111] border border-[#383838] px-1.5 py-1 text-xs text-white font-black focus:outline-none focus:border-[#FF6500]"
+                              />
+                            </div>
+
+                            {/* Rest */}
+                            <div>
+                              <label className="text-[9px] text-[#777777] uppercase font-bold block mb-1">
+                                Descanso (s)
+                              </label>
+                              <input
+                                type="number"
+                                step="5"
+                                min={0}
+                                max={600}
+                                value={re.rest_seconds || 60}
+                                onChange={(e) =>
+                                  handleUpdateParam(index, 'rest_seconds', Number(e.target.value))
+                                }
+                                className="w-full text-center rounded-lg bg-[#111111] border border-[#383838] px-1.5 py-1 text-xs text-gray-300 font-black focus:outline-none focus:border-[#FF6500]"
+                              />
+                            </div>
+
+                            {/* Special Technique */}
+                            <div>
+                              <label className="text-[9px] text-[#777777] uppercase font-bold block mb-1">
+                                Técnica
+                              </label>
+                              <select
+                                value={re.set_type || 'normal'}
+                                onChange={(e) =>
+                                  handleUpdateParam(index, 'set_type', e.target.value as SetType)
+                                }
+                                className="w-full rounded-lg bg-[#111111] border border-[#383838] px-1.5 py-1 text-[11px] text-white focus:outline-none focus:border-[#FF6500]"
+                              >
+                                <option value="normal">Normal</option>
+                                <option value="dropset">Drop Set</option>
+                                <option value="biset">Bi-Set</option>
+                                <option value="rest_pause">Rest Pause</option>
+                                <option value="falha">Até a Falha</option>
+                                <option value="aquecimento">Aquecimento</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Notes */}
+                          <div>
+                            <input
+                              type="text"
+                              value={re.notes || ''}
+                              placeholder="Observações (ex: última série até a falha, cadência 3-1-1)"
+                              onChange={(e) => handleUpdateParam(index, 'notes', e.target.value)}
+                              className="w-full rounded-lg bg-[#111111] border border-[#2a2a2a] px-2.5 py-1.5 text-xs text-gray-300 placeholder:text-gray-600 focus:outline-none focus:border-[#FF6500]"
+                            />
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
+                );
+              })
+            )}
 
-                  {/* Right: Parameter Controls (Interactive or Display Mode) */}
-                  <div
-                    className="flex items-center justify-between lg:justify-end gap-3 w-full lg:w-auto shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-[#222222]"
-                    onClick={(e) => isEditingParams && e.stopPropagation()}
-                  >
-                    {!isEditingParams ? (
-                      /* Read-only Display Mode */
-                      <div className="flex items-center gap-2.5 text-xs font-mono">
-                        <div className="px-2.5 py-1.5 rounded-lg bg-[#202020] border border-[#2d2d2d] text-center">
-                          <span className="text-[9px] text-[#777777] block uppercase">Séries</span>
-                          <span className="font-black text-white text-xs">
-                            {re.target_sets || 3}x
-                          </span>
-                        </div>
-
-                        <div className="px-2.5 py-1.5 rounded-lg bg-[#202020] border border-[#2d2d2d] text-center">
-                          <span className="text-[9px] text-[#777777] block uppercase">Reps</span>
-                          <span className="font-black text-[#FF6500] text-xs">
-                            {re.target_reps_min}
-                            {re.target_reps_max && re.target_reps_max !== re.target_reps_min
-                              ? `-${re.target_reps_max}`
-                              : ''}
-                          </span>
-                        </div>
-
-                        {re.target_weight_kg !== undefined && re.target_weight_kg > 0 && (
-                          <div className="px-2.5 py-1.5 rounded-lg bg-[#202020] border border-[#2d2d2d] text-center">
-                            <span className="text-[9px] text-[#777777] block uppercase">Carga</span>
-                            <span className="font-black text-white text-xs">
-                              {re.target_weight_kg}kg
-                            </span>
-                          </div>
-                        )}
-
-                        <div className="px-2.5 py-1.5 rounded-lg bg-[#202020] border border-[#2d2d2d] text-center">
-                          <span className="text-[9px] text-[#777777] block uppercase">Descanso</span>
-                          <span className="font-black text-gray-300 text-xs">
-                            {re.rest_seconds || 60}s
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      /* Interactive Edit Inputs Mode */
-                      <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
-                        {/* Sets Input */}
-                        <div className="flex flex-col items-center">
-                          <span className="text-[9px] text-[#777777] uppercase font-bold">Séries</span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={12}
-                            value={re.target_sets || 3}
-                            onChange={(e) =>
-                              handleUpdateParam(index, 'target_sets', Math.max(1, Number(e.target.value)))
-                            }
-                            className="w-14 text-center rounded-lg bg-[#111111] border border-[#FF6500]/50 px-1 py-1.5 text-xs text-white font-black focus:outline-none focus:border-[#FF6500]"
-                          />
-                        </div>
-
-                        {/* Reps Min */}
-                        <div className="flex flex-col items-center">
-                          <span className="text-[9px] text-[#777777] uppercase font-bold">Reps Mín</span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={100}
-                            value={re.target_reps_min || 8}
-                            onChange={(e) =>
-                              handleUpdateParam(index, 'target_reps_min', Math.max(1, Number(e.target.value)))
-                            }
-                            className="w-16 text-center rounded-lg bg-[#111111] border border-[#FF6500]/50 px-1 py-1.5 text-xs text-[#FF6500] font-black focus:outline-none focus:border-[#FF6500]"
-                          />
-                        </div>
-
-                        {/* Reps Max */}
-                        <div className="flex flex-col items-center">
-                          <span className="text-[9px] text-[#777777] uppercase font-bold">Reps Máx</span>
-                          <input
-                            type="number"
-                            min={1}
-                            max={100}
-                            value={re.target_reps_max || re.target_reps_min || 12}
-                            onChange={(e) =>
-                              handleUpdateParam(index, 'target_reps_max', Math.max(1, Number(e.target.value)))
-                            }
-                            className="w-16 text-center rounded-lg bg-[#111111] border border-[#FF6500]/50 px-1 py-1.5 text-xs text-[#FF6500] font-black focus:outline-none focus:border-[#FF6500]"
-                          />
-                        </div>
-
-                        {/* Load (kg) */}
-                        <div className="flex flex-col items-center">
-                          <span className="text-[9px] text-[#777777] uppercase font-bold">Carga (kg)</span>
-                          <input
-                            type="number"
-                            step="0.5"
-                            min={0}
-                            max={500}
-                            value={re.target_weight_kg ?? 0}
-                            onChange={(e) =>
-                              handleUpdateParam(index, 'target_weight_kg', Number(e.target.value))
-                            }
-                            className="w-16 text-center rounded-lg bg-[#111111] border border-[#383838] px-1 py-1.5 text-xs text-white font-black focus:outline-none focus:border-[#FF6500]"
-                          />
-                        </div>
-
-                        {/* Rest (s) */}
-                        <div className="flex flex-col items-center">
-                          <span className="text-[9px] text-[#777777] uppercase font-bold">Descanso(s)</span>
-                          <input
-                            type="number"
-                            step="5"
-                            min={0}
-                            max={600}
-                            value={re.rest_seconds || 60}
-                            onChange={(e) =>
-                              handleUpdateParam(index, 'rest_seconds', Number(e.target.value))
-                            }
-                            className="w-16 text-center rounded-lg bg-[#111111] border border-[#383838] px-1 py-1.5 text-xs text-gray-300 font-black focus:outline-none focus:border-[#FF6500]"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedExercise(fullEx);
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-[#FF6500]/15 hover:bg-[#FF6500] text-[#FF6500] hover:text-black text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1 shrink-0"
-                    >
-                      <Play className="h-3 w-3 fill-current" />
-                      Ver GIF
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+            {/* Quick Add Button at bottom of list */}
+            {currentExercises.length > 0 && (
+              <button
+                type="button"
+                onClick={handleOpenAddExercise}
+                className="w-full py-3 rounded-xl border border-dashed border-[#2f2f2f] hover:border-[#FF6500]/60 bg-[#141414]/50 hover:bg-[#181818] text-xs font-bold uppercase tracking-wider text-[#888888] hover:text-[#FF6500] transition-all flex items-center justify-center gap-2"
+              >
+                <Plus className="h-4 w-4 stroke-[2.5]" />
+                <span>Adicionar Mais Exercícios a Esta Ficha</span>
+              </button>
+            )}
           </div>
 
           {/* Footer with Main Action */}
@@ -535,9 +754,112 @@ export function RoutineDetailModal({
         </div>
       </div>
 
+      {/* Nested Exercise Picker Modal (for Add or Swap) */}
+      {isExercisePickerOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/90 backdrop-blur-md transition-opacity"
+            onClick={() => setIsExercisePickerOpen(false)}
+          />
+
+          <div className="relative w-full max-w-2xl bg-[#141414] border border-[#2d2d2d] rounded-2xl shadow-2xl z-20 my-6 overflow-hidden max-h-[85vh] flex flex-col">
+            {/* Picker Header */}
+            <div className="p-5 border-b border-[#262626] flex items-center justify-between gap-4 bg-[#181818]">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#FF6500] block">
+                  {swappingExerciseIndex !== null ? 'SUBSTITUIR EXERCÍCIO' : 'ADICIONAR À FICHA'}
+                </span>
+                <h3 className="font-display font-black text-lg text-white uppercase tracking-tight">
+                  {swappingExerciseIndex !== null ? 'Escolha o Novo Exercício' : 'Selecionar da Biblioteca'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsExercisePickerOpen(false)}
+                className="p-2 rounded-xl text-[#777777] hover:text-white hover:bg-[#222222] transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="p-4 border-b border-[#222222] bg-[#161616]">
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[#777777]" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar por nome ou músculo (ex: supino, costas, pernas)..."
+                  className="w-full rounded-xl bg-[#111111] border border-[#2f2f2f] pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-gray-500 outline-none focus:border-[#FF6500]"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Exercise List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {filteredExercises.map((ex) => {
+                const isAlreadyAdded =
+                  swappingExerciseIndex !== null
+                    ? currentExercises.some(
+                        (e, i) =>
+                          i !== swappingExerciseIndex &&
+                          (e.exercise?.id || e.exercise_id) === ex.id
+                      )
+                    : currentExercises.some(
+                        (e) => (e.exercise?.id || e.exercise_id) === ex.id
+                      );
+
+                return (
+                  <div
+                    key={ex.id}
+                    onClick={() => {
+                      if (!isAlreadyAdded) {
+                        handleSelectPickerExercise(ex);
+                      }
+                    }}
+                    className={`flex items-center justify-between rounded-xl border p-3 transition-all ${
+                      isAlreadyAdded
+                        ? 'border-[#222222] bg-[#121212] opacity-50 cursor-not-allowed select-none'
+                        : 'border-[#262626] bg-[#181818] hover:border-[#FF6500]/60 hover:bg-[#202020] cursor-pointer'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h5 className="text-sm font-bold text-white">{ex.name}</h5>
+                        {isAlreadyAdded && (
+                          <span className="rounded bg-[#252525] border border-[#333333] px-1.5 py-0.5 text-[10px] font-semibold text-[#888888]">
+                            Já na ficha
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-[#777777] mt-0.5">
+                        Músculo: <span className="text-[#FF6500] uppercase font-semibold">{ex.primary_muscle}</span> • Equipamento: {ex.equipment.replace(/_/g, ' ')}
+                      </p>
+                    </div>
+
+                    {isAlreadyAdded ? (
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 text-xs font-semibold text-emerald-400">
+                        <Check className="h-3.5 w-3.5" />
+                        Adicionado
+                      </span>
+                    ) : (
+                      <span className="rounded-lg bg-[#FF6500]/15 hover:bg-[#FF6500] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#FF6500] hover:text-black transition-colors">
+                        {swappingExerciseIndex !== null ? 'Substituir' : '+ Selecionar'}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Nested Exercise Detail & GIF Modal */}
       {selectedExercise && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/90 backdrop-blur-md transition-opacity"
