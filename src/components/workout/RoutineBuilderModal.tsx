@@ -12,6 +12,7 @@ import {
   Weight,
   Layers,
   Search,
+  Check,
 } from 'lucide-react';
 import { WorkoutRoutine, RoutineExercise, Exercise, SetType } from '@/types/database';
 import { appStorage } from '@/lib/storage';
@@ -66,6 +67,9 @@ export function RoutineBuilderModal({
   if (!isOpen) return null;
 
   const handleAddExerciseToRoutine = (exercise: Exercise) => {
+    if (exercises.some((e) => (e.exercise?.id || e.exercise_id) === exercise.id)) {
+      return;
+    }
     const newRoutineEx: RoutineExercise = {
       id: `re-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       routine_id: routineToEdit?.id || 'new-routine',
@@ -96,6 +100,14 @@ export function RoutineBuilderModal({
   };
 
   const handleSave = () => {
+    const seen = new Set<string>();
+    const cleanedExercises = exercises.filter((ex) => {
+      const id = ex.exercise?.id || ex.exercise_id;
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
     const routine: WorkoutRoutine = {
       id: routineToEdit?.id || `rotina-${Date.now()}`,
       title,
@@ -103,7 +115,7 @@ export function RoutineBuilderModal({
       split_tag: splitTag,
       day_of_week: dayOfWeek,
       color,
-      exercises,
+      exercises: cleanedExercises,
       created_at: routineToEdit?.created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -452,23 +464,51 @@ export function RoutineBuilderModal({
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {filteredExercises.map((ex) => (
-                <div
-                  key={ex.id}
-                  onClick={() => handleAddExerciseToRoutine(ex)}
-                  className="flex items-center justify-between rounded-xl border border-surface-border bg-surface-elevated/60 p-3 hover:border-primary-500/60 hover:bg-surface-elevated cursor-pointer transition-all"
-                >
-                  <div>
-                    <h5 className="text-sm font-bold text-white">{ex.name}</h5>
-                    <p className="text-[11px] text-gray-400">
-                      Músculo: <span className="text-primary-400 capitalize">{ex.primary_muscle}</span> • Equipamento: {ex.equipment}
-                    </p>
+              {filteredExercises.map((ex) => {
+                const isAlreadyAdded = exercises.some(
+                  (e) => (e.exercise?.id || e.exercise_id) === ex.id
+                );
+
+                return (
+                  <div
+                    key={ex.id}
+                    onClick={() => {
+                      if (!isAlreadyAdded) {
+                        handleAddExerciseToRoutine(ex);
+                      }
+                    }}
+                    className={`flex items-center justify-between rounded-xl border p-3 transition-all ${
+                      isAlreadyAdded
+                        ? 'border-surface-border/40 bg-surface-elevated/30 opacity-50 cursor-not-allowed select-none'
+                        : 'border-surface-border bg-surface-elevated/60 hover:border-primary-500/60 hover:bg-surface-elevated cursor-pointer'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h5 className="text-sm font-bold text-white">{ex.name}</h5>
+                        {isAlreadyAdded && (
+                          <span className="rounded bg-surface-card border border-surface-border px-1.5 py-0.5 text-[10px] font-semibold text-gray-400">
+                            Já na ficha
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-400">
+                        Músculo: <span className="text-primary-400 capitalize">{ex.primary_muscle}</span> • Equipamento: {ex.equipment}
+                      </p>
+                    </div>
+                    {isAlreadyAdded ? (
+                      <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 text-xs font-semibold text-emerald-400">
+                        <Check className="h-3.5 w-3.5" />
+                        Adicionado
+                      </span>
+                    ) : (
+                      <span className="rounded-lg bg-primary-500/10 px-2.5 py-1 text-xs font-bold text-primary-400 hover:bg-primary-500/20">
+                        + Selecionar
+                      </span>
+                    )}
                   </div>
-                  <span className="rounded-lg bg-primary-500/10 px-2 py-1 text-xs font-bold text-primary-400">
-                    + Selecionar
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

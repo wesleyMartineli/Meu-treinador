@@ -130,9 +130,9 @@ function LoginContent() {
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-10 sm:px-6">
         <div className="max-w-lg w-full flex flex-col items-center">
           
-          {/* Logo centered above the card */}
+          {/* Logo centered above the card - Only geometric symbol */}
           <div className="mb-8 flex flex-col items-center text-center">
-            <LogoMT size="xl" showText={true} href="/" />
+            <LogoMT size="2xl" showText={false} href="/" />
           </div>
 
           {/* Auth Card */}

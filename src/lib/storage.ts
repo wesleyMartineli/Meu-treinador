@@ -189,16 +189,38 @@ class AppStorage {
 
   // Workout Routines
   getRoutines(): WorkoutRoutine[] {
-    return this.getItem<WorkoutRoutine[]>(STORAGE_KEYS.ROUTINES, []);
+    const list = this.getItem<WorkoutRoutine[]>(STORAGE_KEYS.ROUTINES, []);
+    if (!Array.isArray(list)) return [];
+    return list.map((routine) => {
+      if (!Array.isArray(routine.exercises)) return routine;
+      const seen = new Set<string>();
+      const deduped = routine.exercises.filter((ex) => {
+        const id = ex.exercise?.id || ex.exercise_id;
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      return { ...routine, exercises: deduped };
+    });
   }
 
   saveRoutine(routine: WorkoutRoutine): void {
+    // Deduplicate exercises before saving
+    const seen = new Set<string>();
+    const cleanedExercises = (routine.exercises || []).filter((ex) => {
+      const id = ex.exercise?.id || ex.exercise_id;
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+    const cleanedRoutine = { ...routine, exercises: cleanedExercises };
+
     const routines = this.getRoutines();
-    const index = routines.findIndex((r) => r.id === routine.id);
+    const index = routines.findIndex((r) => r.id === cleanedRoutine.id);
     if (index >= 0) {
-      routines[index] = routine;
+      routines[index] = cleanedRoutine;
     } else {
-      routines.push(routine);
+      routines.push(cleanedRoutine);
     }
     this.setItem(STORAGE_KEYS.ROUTINES, routines);
 

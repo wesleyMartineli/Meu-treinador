@@ -5,7 +5,7 @@ import Link from 'next/link';
 
 interface LogoMTProps {
   className?: string;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   showText?: boolean;
   href?: string;
 }
@@ -21,6 +21,7 @@ export function LogoMT({
     md: 'h-12 w-12',
     lg: 'h-16 w-16',
     xl: 'h-24 w-24',
+    '2xl': 'h-28 w-28',
   };
 
   const pixelDimensions = {
@@ -28,6 +29,7 @@ export function LogoMT({
     md: { w: 48, h: 48 },
     lg: { w: 64, h: 64 },
     xl: { w: 96, h: 96 },
+    '2xl': { w: 112, h: 112 },
   };
 
   const textClasses = {
@@ -35,6 +37,7 @@ export function LogoMT({
     md: 'text-base',
     lg: 'text-xl',
     xl: 'text-2xl',
+    '2xl': 'text-3xl',
   };
 
   const dims = pixelDimensions[size];
@@ -57,11 +60,11 @@ export function LogoMT({
       </div>
 
       {showText && (
-        <div className="flex flex-col">
-          <div className={`font-display font-black tracking-tight text-[#F5F5F5] ${textClasses[size]} leading-none`}>
+        <div className="flex flex-col text-left">
+          <div className={`font-display font-black tracking-tight text-[#F5F5F5] ${textClasses[size]} leading-none uppercase`}>
             MEU <span className="text-[#FF6500]">TREINADOR</span>
           </div>
-          <span className="text-[9px] font-bold uppercase tracking-widest text-[#777777] mt-0.5">
+          <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-widest text-[#777777] mt-1 font-mono">
             PERFORMANCE & SAAS
           </span>
         </div>

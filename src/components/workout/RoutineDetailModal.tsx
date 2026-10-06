@@ -54,7 +54,14 @@ export function RoutineDetailModal({
 
   React.useEffect(() => {
     if (routine) {
-      setCurrentExercises(routine.exercises || []);
+      const seen = new Set<string>();
+      const deduped = (routine.exercises || []).filter((ex) => {
+        const id = ex.exercise?.id || ex.exercise_id;
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      setCurrentExercises(deduped);
       setIsEditingParams(false);
       setHasSavedFeedback(false);
     }

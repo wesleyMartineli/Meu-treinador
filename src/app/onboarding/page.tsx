@@ -151,7 +151,7 @@ export default function OnboardingPage() {
       {/* Header with Progress Bar */}
       <header className="relative z-10 px-4 sm:px-6 py-6 max-w-4xl mx-auto w-full">
         <div className="flex items-center justify-between mb-6">
-          <LogoMT size="md" showText={true} href="/" />
+          <LogoMT size="md" showText={false} href="/" />
           <div className="text-right">
             <span className="text-xs font-bold uppercase tracking-widest text-[#FF6500]">
               Passo {step} de {totalSteps}
