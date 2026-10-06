@@ -467,6 +467,73 @@ class AppStorage {
     this.setItem(STORAGE_KEYS.COACH_MESSAGES, messages);
   }
 
+  // Load a complete user bundle from Supabase into local storage
+  loadUserDataFromSupabaseProfile(remoteProfile: Record<string, any>): void {
+    if (!this.isBrowser() || !remoteProfile) return;
+
+    this.setItem(STORAGE_KEYS.PROFILE, remoteProfile);
+
+    if (remoteProfile.weekly_schedule && Array.isArray(remoteProfile.weekly_schedule)) {
+      this.setItem(STORAGE_KEYS.WEEKLY_SCHEDULE, remoteProfile.weekly_schedule);
+    } else {
+      this.setItem(STORAGE_KEYS.WEEKLY_SCHEDULE, SEED_WEEKLY_SCHEDULE);
+    }
+
+    if (remoteProfile.routines && Array.isArray(remoteProfile.routines)) {
+      this.setItem(STORAGE_KEYS.ROUTINES, remoteProfile.routines);
+    } else {
+      this.setItem(STORAGE_KEYS.ROUTINES, []);
+    }
+
+    if (remoteProfile.goals && Array.isArray(remoteProfile.goals)) {
+      this.setItem(STORAGE_KEYS.GOALS, remoteProfile.goals);
+    } else {
+      this.setItem(STORAGE_KEYS.GOALS, []);
+    }
+
+    if (remoteProfile.workout_logs && Array.isArray(remoteProfile.workout_logs)) {
+      this.setItem(STORAGE_KEYS.WORKOUT_LOGS, remoteProfile.workout_logs);
+    } else {
+      this.setItem(STORAGE_KEYS.WORKOUT_LOGS, []);
+    }
+
+    if (remoteProfile.running_logs && Array.isArray(remoteProfile.running_logs)) {
+      this.setItem(STORAGE_KEYS.RUNNING_LOGS, remoteProfile.running_logs);
+    } else {
+      this.setItem(STORAGE_KEYS.RUNNING_LOGS, []);
+    }
+
+    if (remoteProfile.body_metrics && Array.isArray(remoteProfile.body_metrics)) {
+      this.setItem(STORAGE_KEYS.BODY_METRICS, remoteProfile.body_metrics);
+    } else {
+      this.setItem(STORAGE_KEYS.BODY_METRICS, []);
+    }
+
+    if (remoteProfile.recovery_checkins && Array.isArray(remoteProfile.recovery_checkins)) {
+      this.setItem(STORAGE_KEYS.RECOVERY_CHECKINS, remoteProfile.recovery_checkins);
+    } else {
+      this.setItem(STORAGE_KEYS.RECOVERY_CHECKINS, []);
+    }
+
+    window.dispatchEvent(new CustomEvent('meutreinador_storage_change', { detail: {} }));
+  }
+
+  // Clear all session and cached user data
+  clearSession(): void {
+    if (!this.isBrowser()) return;
+    try {
+      Object.values(STORAGE_KEYS).forEach((key) => {
+        localStorage.removeItem(key);
+      });
+      localStorage.removeItem('meutreinador_current_user_id');
+      localStorage.removeItem('meutreinador_user_email');
+      localStorage.removeItem('meutreinador_accounts_registry');
+      window.dispatchEvent(new CustomEvent('meutreinador_storage_change', { detail: {} }));
+    } catch (e) {
+      console.error('Failed to clear session:', e);
+    }
+  }
+
   // Initialize fresh athlete platform from scratch
   initializeCleanAthleteData(
     profile: UserProfile,
