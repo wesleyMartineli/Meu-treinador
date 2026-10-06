@@ -26,7 +26,9 @@ import {
   SEED_WEEKLY_REPORT,
 } from './seed-data';
 
-const STORAGE_KEYS = {
+import { supabase, isSupabaseConfigured } from './supabase';
+
+export const STORAGE_KEYS = {
   PROFILE: 'meutreinador_profile_v2',
   EXERCISES: 'meutreinador_exercises_v5',
   ROUTINES: 'meutreinador_routines_v2',
@@ -48,7 +50,7 @@ class AppStorage {
     return typeof window !== 'undefined';
   }
 
-  private getItem<T>(key: string, defaultValue: T): T {
+  getItem<T>(key: string, defaultValue: T): T {
     if (!this.isBrowser()) return defaultValue;
     try {
       const stored = localStorage.getItem(key);
@@ -60,7 +62,7 @@ class AppStorage {
     }
   }
 
-  private setItem<T>(key: string, value: T): void {
+  setItem<T>(key: string, value: T): void {
     if (!this.isBrowser()) return;
     try {
       localStorage.setItem(key, JSON.stringify(value));
@@ -70,6 +72,23 @@ class AppStorage {
     }
   }
 
+  private syncToSupabase(payload: Record<string, any>): void {
+    if (!this.isBrowser() || !isSupabaseConfigured()) return;
+    try {
+      const profile = this.getProfile();
+      if (!profile || !profile.id || profile.name === 'Atleta') return;
+      void Promise.resolve(
+        supabase.from('profiles').upsert({
+          id: profile.id,
+          email: profile.email.toLowerCase(),
+          name: profile.name,
+          ...payload,
+          updated_at: new Date().toISOString(),
+        })
+      );
+    } catch {}
+  }
+
   // User Profile
   getProfile(): UserProfile {
     return this.getItem<UserProfile>(STORAGE_KEYS.PROFILE, SEED_PROFILE);
@@ -77,6 +96,21 @@ class AppStorage {
 
   saveProfile(profile: UserProfile): void {
     this.setItem(STORAGE_KEYS.PROFILE, profile);
+    this.syncToSupabase({
+      name: profile.name,
+      initial_weight_kg: profile.initial_weight_kg,
+      target_weight_kg: profile.target_weight_kg,
+      current_weight_kg: profile.current_weight_kg,
+      height_cm: profile.height_cm,
+      experience_level: profile.experience_level,
+      bench_pr_kg: profile.bench_pr_kg,
+      squat_pr_kg: profile.squat_pr_kg,
+      deadlift_pr_kg: profile.deadlift_pr_kg,
+      best_5k_time: profile.best_5k_time,
+      best_5k_pace: profile.best_5k_pace,
+      streak_days: profile.streak_days,
+      total_workouts_completed: profile.total_workouts_completed,
+    });
   }
 
   // Goals
@@ -86,6 +120,7 @@ class AppStorage {
 
   saveGoals(goals: import('@/types').GoalItem[]): void {
     this.setItem(STORAGE_KEYS.GOALS, goals);
+    this.syncToSupabase({ goals });
   }
 
   addGoal(goal: import('@/types').GoalItem): void {
@@ -166,11 +201,62 @@ class AppStorage {
       routines.push(routine);
     }
     this.setItem(STORAGE_KEYS.ROUTINES, routines);
+
+    // Sync weekly schedule items linked to this routine
+    try {
+      const schedule = this.getWeeklySchedule();
+      let scheduleChanged = false;
+      const updatedSchedule = schedule.map((day) => {
+        if (
+          day.activity_type === 'strength' &&
+          (day.routine_id === routine.id ||
+            (!day.routine_id &&
+              ((routine.split_tag && day.primary_activity.toLowerCase().includes(routine.split_tag.toLowerCase())) ||
+                (routine.title && day.primary_activity.toLowerCase().includes(routine.title.toLowerCase())))))
+        ) {
+          scheduleChanged = true;
+          return {
+            ...day,
+            routine_id: routine.id,
+            primary_activity: routine.title,
+          };
+        }
+        return day;
+      });
+
+      if (scheduleChanged) {
+        this.setItem(STORAGE_KEYS.WEEKLY_SCHEDULE, updatedSchedule);
+      }
+    } catch {}
+
+    this.syncToSupabase({ routines: this.getRoutines(), weekly_schedule: this.getWeeklySchedule() });
   }
 
   deleteRoutine(id: string): void {
     const routines = this.getRoutines().filter((r) => r.id !== id);
     this.setItem(STORAGE_KEYS.ROUTINES, routines);
+
+    try {
+      const schedule = this.getWeeklySchedule();
+      let scheduleChanged = false;
+      const updatedSchedule = schedule.map((day) => {
+        if (day.routine_id === id) {
+          scheduleChanged = true;
+          return {
+            ...day,
+            routine_id: undefined,
+            primary_activity: 'Ficha de Musculação',
+          };
+        }
+        return day;
+      });
+
+      if (scheduleChanged) {
+        this.setItem(STORAGE_KEYS.WEEKLY_SCHEDULE, updatedSchedule);
+      }
+    } catch {}
+
+    this.syncToSupabase({ routines: this.getRoutines(), weekly_schedule: this.getWeeklySchedule() });
   }
 
   duplicateRoutine(id: string): WorkoutRoutine | null {
@@ -314,11 +400,39 @@ class AppStorage {
 
   // Weekly Schedule
   getWeeklySchedule(): WeeklyScheduleDay[] {
-    return this.getItem<WeeklyScheduleDay[]>(STORAGE_KEYS.WEEKLY_SCHEDULE, SEED_WEEKLY_SCHEDULE);
+    const rawSchedule = this.getItem<WeeklyScheduleDay[]>(STORAGE_KEYS.WEEKLY_SCHEDULE, SEED_WEEKLY_SCHEDULE);
+    const routines = this.getRoutines();
+
+    if (routines.length > 0 && Array.isArray(rawSchedule)) {
+      return rawSchedule.map((day) => {
+        if (day.activity_type === 'strength') {
+          const matchedRoutine = day.routine_id
+            ? routines.find((r) => r.id === day.routine_id)
+            : routines.find(
+                (r) =>
+                  (r.split_tag && day.primary_activity.toLowerCase().includes(r.split_tag.toLowerCase())) ||
+                  (r.title && day.primary_activity.toLowerCase().includes(r.title.toLowerCase())) ||
+                  (r.title && r.title.toLowerCase().includes(day.primary_activity.toLowerCase()))
+              );
+
+          if (matchedRoutine) {
+            return {
+              ...day,
+              routine_id: matchedRoutine.id,
+              primary_activity: matchedRoutine.title,
+            };
+          }
+        }
+        return day;
+      });
+    }
+
+    return rawSchedule;
   }
 
   saveWeeklySchedule(schedule: WeeklyScheduleDay[]): void {
     this.setItem(STORAGE_KEYS.WEEKLY_SCHEDULE, schedule);
+    this.syncToSupabase({ weekly_schedule: schedule });
   }
 
   toggleScheduleDay(dayIndex: number): void {
@@ -465,15 +579,24 @@ class AppStorage {
     this.saveGoals(initialGoals);
 
     // 4. Generate initial weekly schedule
+    const userRoutines = this.getRoutines();
     const days = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
     const generatedSchedule: WeeklyScheduleDay[] = days.map((dayName, idx) => {
       let isTraining = false;
       let activity = '🛌 Descanso Ativo / Recuperação';
       let type: 'strength' | 'running' | 'rest' | 'hybrid' = 'rest';
+      let routineId: string | undefined = undefined;
 
       if (weeklyDays >= 3 && (idx === 0 || idx === 2 || idx === 4)) {
         isTraining = true;
-        activity = idx === 0 ? '🏋 Treino A (Superior)' : idx === 2 ? '🏋 Treino B (Inferior)' : '🏋 Treino C (Geral)';
+        const routineIndex = idx === 0 ? 0 : idx === 2 ? 1 : 2;
+        const routine = userRoutines[routineIndex];
+        if (routine) {
+          activity = routine.title;
+          routineId = routine.id;
+        } else {
+          activity = idx === 0 ? 'Ficha A' : idx === 2 ? 'Ficha B' : 'Ficha C';
+        }
         type = 'strength';
       } else if (weeklyDays >= 4 && idx === 1) {
         isTraining = true;
@@ -481,7 +604,13 @@ class AppStorage {
         type = 'running';
       } else if (weeklyDays >= 5 && idx === 3) {
         isTraining = true;
-        activity = '🏋 Treino D (Hipertrofia Focada)';
+        const routine = userRoutines[3];
+        if (routine) {
+          activity = routine.title;
+          routineId = routine.id;
+        } else {
+          activity = 'Ficha D';
+        }
         type = 'strength';
       } else if (weeklyDays >= 6 && idx === 5) {
         isTraining = true;
@@ -494,6 +623,7 @@ class AppStorage {
         day_index: idx,
         primary_activity: activity,
         activity_type: type,
+        routine_id: routineId,
         completed: false,
         notes: isTraining ? 'Programado conforme perfil do atleta' : 'Dia de regeneração biológica',
       };

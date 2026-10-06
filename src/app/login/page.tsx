@@ -22,7 +22,7 @@ import {
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const initialMode = searchParams.get('mode') === 'login' ? 'login' : 'register';
+  const initialMode = searchParams.get('mode') === 'register' ? 'register' : 'login';
 
   const [activeTab, setActiveTab] = useState<'register' | 'login'>(initialMode);
 
@@ -38,10 +38,10 @@ function LoginContent() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // If already authenticated and onboarded, offer quick redirect
+  // If already authenticated and onboarded, redirect immediately to dashboard
   React.useEffect(() => {
     if (isAuthenticated && isOnboarded) {
-      // router.push('/dashboard');
+      router.replace('/dashboard');
     }
   }, [isAuthenticated, isOnboarded, router]);
 
@@ -71,7 +71,11 @@ function LoginContent() {
     setIsSubmitting(false);
 
     if (result.success) {
-      router.push('/onboarding');
+      if (result.isOnboarded) {
+        router.push('/dashboard');
+      } else {
+        router.push('/onboarding');
+      }
     } else {
       setErrorMessage(result.error || 'Erro ao criar perfil. Tente novamente.');
     }

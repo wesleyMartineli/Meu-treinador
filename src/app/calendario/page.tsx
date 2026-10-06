@@ -155,11 +155,12 @@ export default function CalendarioPage() {
       const found = routines.find((r) => r.id === day.routine_id);
       if (found) return found;
     }
-    // Match by title keywords if routine_id is not set
+    // Match by split tag or title keywords if routine_id is not set
     const match = routines.find(
       (r) =>
-        day.primary_activity.toLowerCase().includes(r.split_tag.toLowerCase()) ||
-        day.primary_activity.toLowerCase().includes(r.title.toLowerCase())
+        (r.split_tag && day.primary_activity.toLowerCase().includes(r.split_tag.toLowerCase())) ||
+        (r.title && day.primary_activity.toLowerCase().includes(r.title.toLowerCase())) ||
+        (r.title && r.title.toLowerCase().includes(day.primary_activity.toLowerCase()))
     );
     return match;
   };
@@ -171,7 +172,7 @@ export default function CalendarioPage() {
     setActivityType(actType);
     setRunningModality(day.running_modality || 'ritmo');
     setSelectedRoutineId(day.routine_id || existingRoutine?.id || (routines[0]?.id ?? ''));
-    setCustomTitle(day.primary_activity);
+    setCustomTitle(existingRoutine ? existingRoutine.title : day.primary_activity);
     setTargetDistance(day.target_distance_km || 5.0);
     setTargetDuration(day.target_duration_minutes || (existingRoutine ? existingRoutine.exercises.length * 9 : 45));
     setNotes(day.notes || '');
@@ -189,7 +190,7 @@ export default function CalendarioPage() {
       finalTitle = `🏃 ${modLabel} (${targetDistance}km)`;
     } else if (activityType === 'strength') {
       const routine = routines.find((r) => r.id === selectedRoutineId);
-      finalTitle = routine ? `${routine.title}` : `🏋 Musculação Personalizada`;
+      finalTitle = routine ? `${routine.title}` : `Ficha de Musculação`;
       finalDuration = routine ? routine.exercises.length * 9 : 45;
     } else {
       finalTitle = '🛌 Descanso & Recuperação Ativa';
@@ -561,7 +562,7 @@ export default function CalendarioPage() {
 
                   {/* Main Activity Title */}
                   <h3 className="font-display font-bold text-sm text-white line-clamp-2 mt-1">
-                    {day.primary_activity}
+                    {day.activity_type === 'strength' && routineForDay ? routineForDay.title : day.primary_activity}
                   </h3>
 
                   {/* If strength routine is linked */}

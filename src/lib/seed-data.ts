@@ -1775,7 +1775,7 @@ export const SEED_WEEKLY_SCHEDULE: WeeklyScheduleDay[] = [
   {
     day_name: 'Segunda',
     day_index: 1,
-    primary_activity: '🏋 Musculação A (Peito/Ombro/Tríceps)',
+    primary_activity: 'Treino A — Peito, Ombros & Tríceps',
     activity_type: 'strength',
     routine_id: 'rotina-treino-a',
     completed: true,
@@ -1797,7 +1797,7 @@ export const SEED_WEEKLY_SCHEDULE: WeeklyScheduleDay[] = [
   {
     day_name: 'Quarta',
     day_index: 3,
-    primary_activity: '🏋 Musculação B (Costas/Bíceps)',
+    primary_activity: 'Treino B — Costas, Posterior Ombro & Bíceps',
     activity_type: 'strength',
     routine_id: 'rotina-treino-b',
     completed: false,
@@ -1819,7 +1819,7 @@ export const SEED_WEEKLY_SCHEDULE: WeeklyScheduleDay[] = [
   {
     day_name: 'Sexta',
     day_index: 5,
-    primary_activity: '🏋 Musculação C (Pernas/Core)',
+    primary_activity: 'Treino C — Pernas Completas & Core',
     activity_type: 'strength',
     routine_id: 'rotina-treino-c',
     completed: false,

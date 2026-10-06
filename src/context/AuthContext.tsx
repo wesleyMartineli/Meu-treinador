@@ -2,8 +2,9 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { UserProfile } from '@/types/database';
-import { appStorage } from '@/lib/storage';
+import { appStorage, STORAGE_KEYS } from '@/lib/storage';
 import { SEED_PROFILE } from '@/lib/seed-data';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 export interface AthleteOnboardingData {
   name: string;
@@ -50,8 +51,20 @@ interface AuthContextType {
 
 const AUTH_STORAGE_KEYS = {
   CURRENT_USER_ID: 'meutreinador_current_user_id',
+  USER_EMAIL: 'meutreinador_user_email',
   ACCOUNTS: 'meutreinador_accounts_registry',
 };
+
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -81,43 +94,109 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    try {
-      const currentUserId = localStorage.getItem(AUTH_STORAGE_KEYS.CURRENT_USER_ID);
-      const accounts = getStoredAccounts();
+    const initAuth = async () => {
+      try {
+        const currentUserId = localStorage.getItem(AUTH_STORAGE_KEYS.CURRENT_USER_ID);
+        const storedEmail = localStorage.getItem(AUTH_STORAGE_KEYS.USER_EMAIL);
+        const accounts = getStoredAccounts();
 
-      if (currentUserId && accounts.length > 0) {
-        const found = accounts.find((acc) => acc.id === currentUserId);
-        if (found) {
-          setUser(found.profile);
+        // 1. Check local accounts first for instant response
+        if (currentUserId && accounts.length > 0) {
+          const found = accounts.find((acc) => acc.id === currentUserId || (storedEmail && acc.email.toLowerCase() === storedEmail.toLowerCase()));
+          if (found) {
+            setUser(found.profile);
+            setIsAuthenticated(true);
+            setIsOnboarded(found.isOnboarded);
+          }
+        }
+
+        // 2. Query Supabase to sync remote status across devices
+        if (isSupabaseConfigured() && (storedEmail || currentUserId)) {
+          try {
+            const query = supabase.from('profiles').select('*');
+            if (storedEmail) {
+              query.eq('email', storedEmail.toLowerCase());
+            } else if (currentUserId) {
+              query.eq('id', currentUserId);
+            }
+            const { data: remoteProfile } = await query.maybeSingle();
+            if (remoteProfile) {
+              const isOnb = Boolean(remoteProfile.is_onboarded);
+              setUser(remoteProfile);
+              setIsAuthenticated(true);
+              setIsOnboarded(isOnb);
+              appStorage.saveProfile(remoteProfile);
+
+              if (remoteProfile.weekly_schedule && Array.isArray(remoteProfile.weekly_schedule)) {
+                appStorage.saveWeeklySchedule(remoteProfile.weekly_schedule);
+              }
+              if (remoteProfile.goals && Array.isArray(remoteProfile.goals)) {
+                appStorage.saveGoals(remoteProfile.goals);
+              }
+              if (remoteProfile.routines && Array.isArray(remoteProfile.routines)) {
+                appStorage.setItem(STORAGE_KEYS.ROUTINES, remoteProfile.routines);
+              }
+              setIsLoading(false);
+              return;
+            }
+          } catch (e) {
+            console.warn('Could not sync with Supabase on startup:', e);
+          }
+        }
+
+        // 3. Fallback to local profile if available and auto-upload to Supabase
+        const storedProfile = appStorage.getProfile();
+        if (storedProfile && storedProfile.name && storedProfile.name !== 'Atleta') {
+          setUser(storedProfile);
           setIsAuthenticated(true);
-          setIsOnboarded(found.isOnboarded);
+          setIsOnboarded(true);
+
+          if (isSupabaseConfigured() && storedProfile.email) {
+            const profileId = (storedProfile.id && storedProfile.id.length === 36) ? storedProfile.id : generateUUID();
+            void Promise.resolve(
+              supabase.from('profiles').upsert({
+                id: profileId,
+                name: storedProfile.name,
+                email: storedProfile.email.toLowerCase(),
+                avatar_url: storedProfile.avatar_url,
+                initial_weight_kg: storedProfile.initial_weight_kg,
+                target_weight_kg: storedProfile.target_weight_kg,
+                current_weight_kg: storedProfile.current_weight_kg,
+                height_cm: storedProfile.height_cm,
+                experience_level: storedProfile.experience_level,
+                bench_pr_kg: storedProfile.bench_pr_kg,
+                squat_pr_kg: storedProfile.squat_pr_kg,
+                deadlift_pr_kg: storedProfile.deadlift_pr_kg,
+                best_5k_time: storedProfile.best_5k_time,
+                best_5k_pace: storedProfile.best_5k_pace,
+                streak_days: storedProfile.streak_days || 0,
+                total_workouts_completed: storedProfile.total_workouts_completed || 0,
+                is_onboarded: true,
+                weekly_schedule: appStorage.getWeeklySchedule(),
+                goals: appStorage.getGoals(),
+                routines: appStorage.getRoutines(),
+                updated_at: new Date().toISOString(),
+              })
+            );
+          }
+
           setIsLoading(false);
           return;
         }
-      }
 
-      // If user had previously used the app before accounts registry was set
-      const storedProfile = appStorage.getProfile();
-      if (storedProfile && storedProfile.name && storedProfile.name !== 'Atleta') {
-        setUser(storedProfile);
-        setIsAuthenticated(true);
-        setIsOnboarded(true);
+        if (!currentUserId && !storedEmail) {
+          setUser(null);
+          setIsAuthenticated(false);
+          setIsOnboarded(false);
+        }
+      } catch (err) {
+        console.error('Error loading auth session:', err);
+      } finally {
         setIsLoading(false);
-        return;
       }
+    };
 
-      // No active session found - remain logged out
-      setUser(null);
-      setIsAuthenticated(false);
-      setIsOnboarded(false);
-    } catch (err) {
-      console.error('Error loading auth session:', err);
-      setUser(null);
-      setIsAuthenticated(false);
-      setIsOnboarded(false);
-    } finally {
-      setIsLoading(false);
-    }
+    initAuth();
   }, []);
 
   // Listen for storage events (e.g. Profile saved elsewhere)
@@ -145,9 +224,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const accounts = getStoredAccounts();
-      const existing = accounts.find((acc) => acc.email.toLowerCase() === trimmedEmail);
 
-      const userId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      // Check if user already exists in Supabase
+      if (isSupabaseConfigured()) {
+        try {
+          const { data: existingRemote } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('email', trimmedEmail)
+            .maybeSingle();
+
+          if (existingRemote && existingRemote.is_onboarded) {
+            localStorage.setItem(AUTH_STORAGE_KEYS.CURRENT_USER_ID, existingRemote.id);
+            localStorage.setItem(AUTH_STORAGE_KEYS.USER_EMAIL, trimmedEmail);
+            appStorage.saveProfile(existingRemote);
+
+            if (existingRemote.weekly_schedule && Array.isArray(existingRemote.weekly_schedule)) {
+              appStorage.saveWeeklySchedule(existingRemote.weekly_schedule);
+            }
+            if (existingRemote.goals && Array.isArray(existingRemote.goals)) {
+              appStorage.saveGoals(existingRemote.goals);
+            }
+            if (existingRemote.routines && Array.isArray(existingRemote.routines)) {
+              appStorage.setItem(STORAGE_KEYS.ROUTINES, existingRemote.routines);
+            }
+
+            setUser(existingRemote);
+            setIsAuthenticated(true);
+            setIsOnboarded(true);
+
+            return { success: true, isOnboarded: true };
+          }
+        } catch (dbErr) {
+          console.warn('Supabase check existing email error:', dbErr);
+        }
+      }
+
+      const userId = generateUUID();
 
       const newProfile: UserProfile = {
         id: userId,
@@ -168,6 +281,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         total_workouts_completed: 0,
       };
 
+      // Save to Supabase
+      if (isSupabaseConfigured()) {
+        try {
+          await supabase.from('profiles').upsert({
+            id: userId,
+            name: trimmedName,
+            email: trimmedEmail,
+            avatar_url: newProfile.avatar_url,
+            initial_weight_kg: 75.0,
+            target_weight_kg: 75.0,
+            current_weight_kg: 75.0,
+            height_cm: 175,
+            experience_level: 'iniciante',
+            is_onboarded: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        } catch (dbErr) {
+          console.error('Supabase profile creation error:', dbErr);
+        }
+      }
+
       const newAccount: StoredAccount = {
         id: userId,
         name: trimmedName,
@@ -178,18 +313,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile: newProfile,
       };
 
-      // If user already existed, update; otherwise push
-      let updatedAccounts = [...accounts];
-      if (existing) {
-        updatedAccounts = updatedAccounts.map((acc) => (acc.email === trimmedEmail ? newAccount : acc));
-      } else {
-        updatedAccounts.push(newAccount);
-      }
-
+      const updatedAccounts = accounts.filter((acc) => acc.email.toLowerCase() !== trimmedEmail);
+      updatedAccounts.push(newAccount);
       saveStoredAccounts(updatedAccounts);
-      localStorage.setItem(AUTH_STORAGE_KEYS.CURRENT_USER_ID, userId);
 
-      // Save initial profile in AppStorage
+      localStorage.setItem(AUTH_STORAGE_KEYS.CURRENT_USER_ID, userId);
+      localStorage.setItem(AUTH_STORAGE_KEYS.USER_EMAIL, trimmedEmail);
+
       appStorage.saveProfile(newProfile);
 
       setUser(newProfile);
@@ -211,7 +341,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Quick Demo account handling
       if (trimmedEmail === 'atleta.demo@meutreinador.pro' || trimmedEmail.includes('demo')) {
-        const demoUserId = 'usr_demo_athlete';
+        const demoUserId = '00000000-0000-0000-0000-000000000001';
         const demoProfile: UserProfile = {
           ...SEED_PROFILE,
           id: demoUserId,
@@ -233,6 +363,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         filteredAccounts.push(demoAccount);
         saveStoredAccounts(filteredAccounts);
         localStorage.setItem(AUTH_STORAGE_KEYS.CURRENT_USER_ID, demoUserId);
+        localStorage.setItem(AUTH_STORAGE_KEYS.USER_EMAIL, trimmedEmail);
         appStorage.saveProfile(demoProfile);
 
         setUser(demoProfile);
@@ -242,10 +373,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: true, isOnboarded: true };
       }
 
+      // 1. Check Supabase first for real database sync
+      if (isSupabaseConfigured()) {
+        try {
+          const { data: remoteProfile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('email', trimmedEmail)
+            .maybeSingle();
+
+          if (remoteProfile) {
+            const isOnb = Boolean(remoteProfile.is_onboarded);
+            localStorage.setItem(AUTH_STORAGE_KEYS.CURRENT_USER_ID, remoteProfile.id);
+            localStorage.setItem(AUTH_STORAGE_KEYS.USER_EMAIL, trimmedEmail);
+            appStorage.saveProfile(remoteProfile);
+
+            if (remoteProfile.weekly_schedule && Array.isArray(remoteProfile.weekly_schedule)) {
+              appStorage.saveWeeklySchedule(remoteProfile.weekly_schedule);
+            }
+            if (remoteProfile.goals && Array.isArray(remoteProfile.goals)) {
+              appStorage.saveGoals(remoteProfile.goals);
+            }
+            if (remoteProfile.routines && Array.isArray(remoteProfile.routines)) {
+              appStorage.setItem(STORAGE_KEYS.ROUTINES, remoteProfile.routines);
+            }
+
+            const updatedAccounts = accounts.filter((acc) => acc.email.toLowerCase() !== trimmedEmail);
+            updatedAccounts.push({
+              id: remoteProfile.id,
+              name: remoteProfile.name,
+              email: trimmedEmail,
+              createdAt: remoteProfile.created_at || new Date().toISOString(),
+              isOnboarded: isOnb,
+              profile: remoteProfile,
+            });
+            saveStoredAccounts(updatedAccounts);
+
+            setUser(remoteProfile);
+            setIsAuthenticated(true);
+            setIsOnboarded(isOnb);
+
+            return { success: true, isOnboarded: isOnb };
+          }
+        } catch (dbErr) {
+          console.error('Supabase lookup error during login:', dbErr);
+        }
+      }
+
+      // 2. Local accounts fallback
       let targetAccount = accounts.find((acc) => acc.email.toLowerCase() === trimmedEmail);
 
       if (!targetAccount) {
-        // Fallback or quick entry
         const fallbackName = trimmedEmail.split('@')[0] || 'Atleta';
         const registerResult = await register(
           fallbackName.charAt(0).toUpperCase() + fallbackName.slice(1),
@@ -256,6 +434,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       localStorage.setItem(AUTH_STORAGE_KEYS.CURRENT_USER_ID, targetAccount.id);
+      localStorage.setItem(AUTH_STORAGE_KEYS.USER_EMAIL, trimmedEmail);
       appStorage.saveProfile(targetAccount.profile);
 
       setUser(targetAccount.profile);
@@ -299,12 +478,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         goal: data.goal,
       });
 
-      // Update stored accounts list
+      const weeklySchedule = appStorage.getWeeklySchedule();
+      const goals = appStorage.getGoals();
+      const routines = appStorage.getRoutines();
+
+      // Save to Supabase (so mobile and other devices immediately know the user is onboarded)
+      if (isSupabaseConfigured()) {
+        try {
+          await supabase.from('profiles').upsert({
+            id: updatedProfile.id,
+            name: updatedProfile.name,
+            email: updatedProfile.email.toLowerCase(),
+            avatar_url: updatedProfile.avatar_url,
+            initial_weight_kg: updatedProfile.initial_weight_kg,
+            target_weight_kg: updatedProfile.target_weight_kg,
+            current_weight_kg: updatedProfile.current_weight_kg,
+            height_cm: updatedProfile.height_cm,
+            experience_level: updatedProfile.experience_level,
+            bench_pr_kg: updatedProfile.bench_pr_kg,
+            squat_pr_kg: updatedProfile.squat_pr_kg,
+            deadlift_pr_kg: updatedProfile.deadlift_pr_kg,
+            best_5k_time: updatedProfile.best_5k_time,
+            best_5k_pace: updatedProfile.best_5k_pace,
+            streak_days: 0,
+            total_workouts_completed: 0,
+            is_onboarded: true,
+            weekly_schedule: weeklySchedule,
+            goals: goals,
+            routines: routines,
+            updated_at: new Date().toISOString(),
+          });
+        } catch (dbErr) {
+          console.error('Error saving onboarding data to Supabase:', dbErr);
+        }
+      }
+
+      // Update stored accounts list locally
       const accounts = getStoredAccounts();
       const updatedAccounts = accounts.map((acc) =>
         acc.id === user.id ? { ...acc, isOnboarded: true, profile: updatedProfile } : acc
       );
       saveStoredAccounts(updatedAccounts);
+
+      localStorage.setItem(AUTH_STORAGE_KEYS.USER_EMAIL, updatedProfile.email.toLowerCase());
 
       setUser(updatedProfile);
       setIsOnboarded(true);
@@ -328,12 +544,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       acc.id === user.id ? { ...acc, profile: updated } : acc
     );
     saveStoredAccounts(updatedAccounts);
+
+    if (isSupabaseConfigured()) {
+      void Promise.resolve(
+        supabase.from('profiles').upsert({
+          id: updated.id,
+          name: updated.name,
+          email: updated.email.toLowerCase(),
+          ...updates,
+          updated_at: new Date().toISOString(),
+        })
+      );
+    }
   };
 
   // Logout
   const logout = () => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem(AUTH_STORAGE_KEYS.CURRENT_USER_ID);
+      localStorage.removeItem(AUTH_STORAGE_KEYS.USER_EMAIL);
     }
     setUser(null);
     setIsAuthenticated(false);

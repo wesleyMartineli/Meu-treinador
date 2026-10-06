@@ -30,10 +30,17 @@ import {
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { user, completeAthleteOnboarding, isAuthenticated } = useAuth();
+  const { user, completeAthleteOnboarding, isAuthenticated, isOnboarded } = useAuth();
 
   const [step, setStep] = useState<number>(1);
   const totalSteps = 5;
+
+  // If already completed onboarding, go straight to dashboard
+  useEffect(() => {
+    if (isOnboarded) {
+      router.replace('/dashboard');
+    }
+  }, [isOnboarded, router]);
 
   // Onboarding Form State
   const [formData, setFormData] = useState<AthleteOnboardingData>({
